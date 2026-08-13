@@ -1,0 +1,12 @@
+# Track only the ASL and basic repo docs.
+*
+!/.gitignore
+!/LICENSE
+!/README.md
+!/asl/
+!/asl/**
+!/Components/
+/Components/*
+!/Components/uhara10
+/Uhara Stuff (UE)
+/tools/
