@@ -1,6 +1,4 @@
-// Erdetspill autosplitter
-// Game: 1.1.2 / Godot 4.6.2
-// Requires the unmodified Uhara10 component in LiveSplit/Components/uhara10.
+// Game version: "1.1.2", Godot version: "4.6.2", Process: "erdetspill", Platform: "Windows".
 
 state("erdetspill") {}
 
@@ -53,8 +51,7 @@ startup
         "UnlockDeliverIceCream"
     };
 
-    // This helper is compiled in memory by LiveSplit. It is Erdetspill/Godot
-    // specific and does not add anything to or modify Uhara10.
+    // This helper is compiled in memory by LiveSplit.
     string readerSource = @"
 using System;
 using System.Diagnostics;
@@ -416,8 +413,7 @@ update
             vars.gameManagerMembers = vars.findGameManager(game);
             if (vars.gameManagerMembers != IntPtr.Zero)
             {
-                // GameManager member 56 is _ending_sequence_started. Each Godot
-                // Variant is 24 bytes and its bool payload begins eight bytes in.
+                // GameManager member 56 is _ending_sequence_started. Each Godot Variant is 24 bytes and its bool payload begins eight bytes in.
                 vars.Resolver.Watch<bool>("endingStarted",
                     IntPtr.Add(vars.gameManagerMembers, 0x548));
                 vars.Uhara.Log("GameManager members found at 0x" +
@@ -454,10 +450,6 @@ update
 
 start
 {
-    // Normally _running becomes true when main_demo.tscn becomes current.
-    // After an in-game restart it may already be true on the reset frame, so
-    // restartArmed also starts the freshly reset LiveSplit attempt.
-    bool shouldStart = vars.timerReady &&
         current.timerRunning &&
         (!old.timerRunning || vars.restartArmed) &&
         (double)current.igt < 1.0;
@@ -473,8 +465,6 @@ start
 
 split
 {
-    // Only FINAL_DELIVERY at Grandpa starts the ending sequence. Timer pauses
-    // caused by death/heaven therefore cannot produce a split.
     if (settings["End"] && vars.timerReady &&
         vars.gameManagerMembers != IntPtr.Zero &&
         !old.endingStarted && current.endingStarted)
@@ -490,9 +480,6 @@ split
 
 reset
 {
-    // GameManager.reset_game() writes 0.0, but the game may run another frame
-    // before LiveSplit polls it. Detect the unambiguous backward jump into the
-    // first second instead of requiring the sampled double to equal zero.
     bool shouldReset = vars.timerReady &&
         (double)current.igt < 1.0 &&
         (double)old.igt > (double)current.igt + 0.05;
@@ -517,7 +504,5 @@ gameTime
 
 isLoading
 {
-    // Freeze LiveSplit's independent clock. gameTime supplies every displayed
-    // centisecond directly from the game's authoritative SpeedrunTimer.
     return vars.timerReady;
 }
