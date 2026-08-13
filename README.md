@@ -3,7 +3,7 @@
 This repo contains the Uhara-based LiveSplit autosplitter for the `erdetspill` process.
 
 - Release script: `asl/Erdetspill.asl`
-- Script version: `1.0.0 (Uhara10)`
+- Script version: `1.1.2 (Uhara10)`
 
 ## What It Does
 
