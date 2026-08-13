@@ -7,24 +7,23 @@ startup
     Assembly.Load(File.ReadAllBytes("Components/uhara10")).CreateInstance("Main");
 
     vars.scriptVersion = "1.1.2";
-    version = vars.scriptVersion + " (Uhara10)";
 
     refreshRate = 120;
     vars.Uhara.AlertGameTime();
 
     dynamic[,] _settings =
     {
-        { "quest_unlocks", true, "Quest Unlocks", null },
-        { "UnlockInheritanceDocument", true, "Redeem the Inheritance Document - ARVEDOKUMENTET", "quest_unlocks" },
-        { "UnlockBuyIceCream", true, "Buy Ice Cream - KJØP IS", "quest_unlocks" },
-        { "UnlockReturnToGrandpa", true, "Return to Grandpa - TILBAKE TIL BESTEFAR", "quest_unlocks" },
-        { "UnlockScholarship", true, "Apply for a Scholarship - STIPEND", "quest_unlocks" },
-        { "UnlockReturnToBank", true, "Return to the Bank - TILBAKE TIL BANKEN", "quest_unlocks" },
-        { "UnlockLastIceCream", true, "Buy the Last Ice Cream - EN IS TIL", "quest_unlocks" },
-        { "UnlockSlaughter", true, "Slaughter in the Name of Gravel - SLAKT I GRUSENS NAVN", "quest_unlocks" },
-        { "UnlockKristofferCap", true, "Return Kristoffer's Cap - CAPSEN TIL KRISTOFFER", "quest_unlocks" },
-        { "UnlockNoPower", true, "Restore the Power - INGEN STRØM", "quest_unlocks" },
-        { "UnlockDeliverIceCream", true, "Deliver the Ice Cream - LEVER ISEN", "quest_unlocks" },
+        { "quest_unlocks", false, "Quest Unlocks", null },
+        { "UnlockInheritanceDocument", false, "Redeem the Inheritance Document - ARVEDOKUMENTET", "quest_unlocks" },
+        { "UnlockBuyIceCream", false, "Buy Ice Cream - KJØP IS", "quest_unlocks" },
+        { "UnlockReturnToGrandpa", false, "Return to Grandpa - TILBAKE TIL BESTEFAR", "quest_unlocks" },
+        { "UnlockScholarship", false, "Apply for a Scholarship - STIPEND", "quest_unlocks" },
+        { "UnlockReturnToBank", false, "Return to the Bank - TILBAKE TIL BANKEN", "quest_unlocks" },
+        { "UnlockLastIceCream", false, "Buy the Last Ice Cream - EN IS TIL", "quest_unlocks" },
+        { "UnlockSlaughter", false, "Slaughter in the Name of Gravel - SLAKT I GRUSENS NAVN", "quest_unlocks" },
+        { "UnlockKristofferCap", false, "Return Kristoffer's Cap - CAPSEN TIL KRISTOFFER", "quest_unlocks" },
+        { "UnlockNoPower", false, "Restore the Power - INGEN STRØM", "quest_unlocks" },
+        { "UnlockDeliverIceCream", false, "Deliver the Ice Cream - LEVER ISEN", "quest_unlocks" },
         { "End", true, "Finish the Game - LEVER ISEN (END)", null },
     };
     vars.Uhara.Settings.Create(_settings);
@@ -450,6 +449,7 @@ update
 
 start
 {
+    bool shouldStart = vars.timerReady &&
         current.timerRunning &&
         (!old.timerRunning || vars.restartArmed) &&
         (double)current.igt < 1.0;
