@@ -55,10 +55,15 @@ These split when the game marks the quest as completed:
 
 ### End
 
+The End setting uses the game's actual ending signal.
+
 - `Finish the Game - LEVER ISEN (END)`
 
-The End setting uses the game's actual ending signal. Unlocking or completing a
-normal quest cannot trigger the End split.
+### Additional Splits
+
+Additional Splits for Things Specifically Added
+
+- `Pick Up the Peak Performance Cap - PLUKK OPP CAPS`
 
 Quest unlock and completion settings are disabled by default. The End setting
 is enabled by default.

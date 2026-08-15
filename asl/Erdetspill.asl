@@ -6,7 +6,7 @@ startup
 {
     Assembly.Load(File.ReadAllBytes("Components/uhara10")).CreateInstance("Main");
 
-    vars.scriptVersion = "1.2.4";
+    vars.scriptVersion = "1.2.5";
 
     refreshRate = 120;
     vars.Uhara.AlertGameTime();
@@ -34,6 +34,8 @@ startup
         { "CompleteSlaughter", false, "Slaughter in the Name of Gravel - SLAKT I GRUSENS NAVN", "quest_completions" },
         { "CompleteKristofferCap", false, "Return Kristoffer's Cap - CAPSEN TIL KRISTOFFER", "quest_completions" },
         { "CompleteNoPower", false, "Restore the Power - INGEN STRØM", "quest_completions" },
+        { "additional_splits", false, "Additional Splits", null },
+        { "HatPickup", false, "Pick Up the Peak Performance Cap - PLUKK OPP CAPS", "additional_splits" },
         { "End", true, "Finish the Game - LEVER ISEN (END)", null },
     };
     vars.Uhara.Settings.Create(_settings);
@@ -45,6 +47,8 @@ startup
     vars.gameManagerScanCooldown = 0;
     vars.previousActiveQuestMask = -1;
     vars.previousCompletedQuestMask = -1;
+    vars.previousHatInInventory = -1;
+    vars.hatPickupSplitDone = false;
     vars.restartArmed = false;
     vars.questSplitQueue = new Queue<int>();
     vars.questSettingKeys = new string[]
@@ -251,6 +255,54 @@ public static class ErdetspillGodotReader
         return GetQuestDictionaryMask(game, gameManagerMembers, 7);
     }
 
+    private static int StringDictionaryContains(
+        Process game, IntPtr gameManagerMembers, int memberIndex, string target)
+    {
+        if (gameManagerMembers == IntPtr.Zero)
+            return -1;
+
+        byte[] dictionaryVariant = ReadBytes(game,
+            gameManagerMembers.ToInt64() + memberIndex * 24, 24);
+        if (dictionaryVariant == null || BitConverter.ToInt32(dictionaryVariant, 0) != 27)
+            return -1;
+
+        long dictionary = BitConverter.ToInt64(dictionaryVariant, 8);
+        byte[] dictionaryHeader = ReadBytes(game, dictionary, 64);
+        if (dictionaryHeader == null)
+            return -1;
+
+        long element = BitConverter.ToInt64(dictionaryHeader, 0x20);
+        uint count = BitConverter.ToUInt32(dictionaryHeader, 0x34);
+        if (count > 128)
+            return -1;
+
+        for (uint i = 0; i < count; i++)
+        {
+            if (element < 0x10000)
+                return -1;
+            byte[] entry = ReadBytes(game, element, 64);
+            if (entry == null)
+                return -1;
+            if (BitConverter.ToInt32(entry, 16) == 4)
+            {
+                string key = ReadGodotString(game, BitConverter.ToInt64(entry, 24));
+                if (String.IsNullOrEmpty(key))
+                    return -1;
+                if (key == target)
+                    return 1;
+            }
+            element = BitConverter.ToInt64(entry, 0);
+        }
+        return 0;
+    }
+
+    public static int HasPeakPerformanceCap(Process game, IntPtr gameManagerMembers)
+    {
+        // inventory is GameManager member 5.
+        return StringDictionaryContains(
+            game, gameManagerMembers, 5, ""peak_performance_lua"");
+    }
+
     public static IntPtr FindTimer(Process game)
     {
         const uint MemCommit = 0x1000;
@@ -372,6 +424,7 @@ public static class ErdetspillGodotReader
 
         return IntPtr.Zero;
     }
+
 }
 ";
 
@@ -390,6 +443,7 @@ public static class ErdetspillGodotReader
         vars.findGameManager = null;
         vars.getActiveQuestMask = null;
         vars.getCompletedQuestMask = null;
+        vars.hasPeakPerformanceCap = null;
     }
     else
     {
@@ -409,6 +463,10 @@ public static class ErdetspillGodotReader
             .GetType("ErdetspillGodotReader").GetMethod("GetCompletedQuestMask");
         vars.getCompletedQuestMask = (Func<System.Diagnostics.Process, IntPtr, int>)Delegate.CreateDelegate(
             typeof(Func<System.Diagnostics.Process, IntPtr, int>), completedQuestMethod);
+        var hatMethod = compiled.CompiledAssembly
+            .GetType("ErdetspillGodotReader").GetMethod("HasPeakPerformanceCap");
+        vars.hasPeakPerformanceCap = (Func<System.Diagnostics.Process, IntPtr, int>)Delegate.CreateDelegate(
+            typeof(Func<System.Diagnostics.Process, IntPtr, int>), hatMethod);
     }
 }
 
@@ -421,6 +479,8 @@ init
     vars.gameManagerScanCooldown = 0;
     vars.previousActiveQuestMask = -1;
     vars.previousCompletedQuestMask = -1;
+    vars.previousHatInInventory = -1;
+    vars.hatPickupSplitDone = false;
     vars.restartArmed = false;
     vars.questSplitQueue.Clear();
 
@@ -515,6 +575,22 @@ update
         }
     }
 
+    if (vars.gameManagerMembers != IntPtr.Zero && vars.hasPeakPerformanceCap != null)
+    {
+        int hatInInventory = vars.hasPeakPerformanceCap(game, vars.gameManagerMembers);
+        if (hatInInventory >= 0)
+        {
+            if (!resetFrame && !vars.hatPickupSplitDone &&
+                vars.previousHatInInventory == 0 && hatInInventory == 1)
+            {
+                vars.hatPickupSplitDone = true;
+                if (settings["HatPickup"])
+                    vars.questSplitQueue.Enqueue(10);
+            }
+            vars.previousHatInInventory = hatInInventory;
+        }
+    }
+
     return true;
 }
 
@@ -527,11 +603,14 @@ start
     if (shouldStart)
     {
         vars.restartArmed = false;
+        vars.hatPickupSplitDone = false;
         vars.questSplitQueue.Clear();
         if (vars.gameManagerMembers != IntPtr.Zero && vars.getActiveQuestMask != null)
             vars.previousActiveQuestMask = vars.getActiveQuestMask(game, vars.gameManagerMembers);
         if (vars.gameManagerMembers != IntPtr.Zero && vars.getCompletedQuestMask != null)
             vars.previousCompletedQuestMask = vars.getCompletedQuestMask(game, vars.gameManagerMembers);
+        if (vars.gameManagerMembers != IntPtr.Zero && vars.hasPeakPerformanceCap != null)
+            vars.previousHatInInventory = vars.hasPeakPerformanceCap(game, vars.gameManagerMembers);
     }
     return shouldStart;
 }
@@ -562,6 +641,8 @@ reset
         vars.questSplitQueue.Clear();
         vars.previousActiveQuestMask = -1;
         vars.previousCompletedQuestMask = -1;
+        vars.previousHatInInventory = -1;
+        vars.hatPickupSplitDone = false;
     }
     return shouldReset;
 }
