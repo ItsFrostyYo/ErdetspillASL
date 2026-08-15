@@ -6,7 +6,7 @@ startup
 {
     Assembly.Load(File.ReadAllBytes("Components/uhara10")).CreateInstance("Main");
 
-    vars.scriptVersion = "1.1.2";
+    vars.scriptVersion = "1.2.4";
 
     refreshRate = 120;
     vars.Uhara.AlertGameTime();
@@ -24,6 +24,16 @@ startup
         { "UnlockKristofferCap", false, "Return Kristoffer's Cap - CAPSEN TIL KRISTOFFER", "quest_unlocks" },
         { "UnlockNoPower", false, "Restore the Power - INGEN STRØM", "quest_unlocks" },
         { "UnlockDeliverIceCream", false, "Deliver the Ice Cream - LEVER ISEN", "quest_unlocks" },
+        { "quest_completions", false, "Quest Completions", null },
+        { "CompleteInheritanceDocument", false, "Redeem the Inheritance Document - ARVEDOKUMENTET", "quest_completions" },
+        { "CompleteBuyIceCream", false, "Buy Ice Cream - KJØP IS", "quest_completions" },
+        { "CompleteReturnToGrandpa", false, "Return to Grandpa - TILBAKE TIL BESTEFAR", "quest_completions" },
+        { "CompleteScholarship", false, "Apply for a Scholarship - STIPEND", "quest_completions" },
+        { "CompleteReturnToBank", false, "Return to the Bank - TILBAKE TIL BANKEN", "quest_completions" },
+        { "CompleteLastIceCream", false, "Buy the Last Ice Cream - EN IS TIL", "quest_completions" },
+        { "CompleteSlaughter", false, "Slaughter in the Name of Gravel - SLAKT I GRUSENS NAVN", "quest_completions" },
+        { "CompleteKristofferCap", false, "Return Kristoffer's Cap - CAPSEN TIL KRISTOFFER", "quest_completions" },
+        { "CompleteNoPower", false, "Restore the Power - INGEN STRØM", "quest_completions" },
         { "End", true, "Finish the Game - LEVER ISEN (END)", null },
     };
     vars.Uhara.Settings.Create(_settings);
@@ -34,6 +44,7 @@ startup
     vars.scanCooldown = 0;
     vars.gameManagerScanCooldown = 0;
     vars.previousActiveQuestMask = -1;
+    vars.previousCompletedQuestMask = -1;
     vars.restartArmed = false;
     vars.questSplitQueue = new Queue<int>();
     vars.questSettingKeys = new string[]
@@ -48,6 +59,18 @@ startup
         "UnlockKristofferCap",
         "UnlockNoPower",
         "UnlockDeliverIceCream"
+    };
+    vars.questCompletionSettingKeys = new string[]
+    {
+        "CompleteInheritanceDocument",
+        "CompleteBuyIceCream",
+        "CompleteReturnToGrandpa",
+        "CompleteScholarship",
+        "CompleteReturnToBank",
+        "CompleteLastIceCream",
+        "CompleteSlaughter",
+        "CompleteKristofferCap",
+        "CompleteNoPower"
     };
 
     // This helper is compiled in memory by LiveSplit.
@@ -170,44 +193,62 @@ public static class ErdetspillGodotReader
         }
     }
 
-    public static int GetActiveQuestMask(Process game, IntPtr gameManagerMembers)
+    private static int GetQuestDictionaryMask(
+        Process game, IntPtr gameManagerMembers, int memberIndex)
     {
         if (gameManagerMembers == IntPtr.Zero)
-            return 0;
+            return -1;
 
-        // gameManagerMembers points at current_day. active_quests is member 6.
         byte[] dictionaryVariant = ReadBytes(game,
-            gameManagerMembers.ToInt64() + 6 * 24, 24);
+            gameManagerMembers.ToInt64() + memberIndex * 24, 24);
         if (dictionaryVariant == null || BitConverter.ToInt32(dictionaryVariant, 0) != 27)
-            return 0;
+            return -1;
 
         long dictionary = BitConverter.ToInt64(dictionaryVariant, 8);
         byte[] dictionaryHeader = ReadBytes(game, dictionary, 64);
         if (dictionaryHeader == null)
-            return 0;
+            return -1;
 
         // DictionaryPrivate contains its HashMap at +0x10. The linked-list
         // head and size are therefore at +0x20 and +0x34 respectively.
         long element = BitConverter.ToInt64(dictionaryHeader, 0x20);
         uint count = BitConverter.ToUInt32(dictionaryHeader, 0x34);
         if (count > 128)
-            return 0;
+            return -1;
 
         int mask = 0;
-        for (uint i = 0; i < count && element >= 0x10000; i++)
+        for (uint i = 0; i < count; i++)
         {
+            if (element < 0x10000)
+                return -1;
+
             // HashMapElement: next, previous, key Variant, value Variant.
             byte[] entry = ReadBytes(game, element, 64);
             if (entry == null)
-                break;
+                return -1;
             if (BitConverter.ToInt32(entry, 16) == 4)
             {
                 long stringData = BitConverter.ToInt64(entry, 24);
-                mask |= QuestBit(ReadGodotString(game, stringData));
+                string questId = ReadGodotString(game, stringData);
+                if (String.IsNullOrEmpty(questId))
+                    return -1;
+                mask |= QuestBit(questId);
             }
             element = BitConverter.ToInt64(entry, 0);
         }
         return mask;
+    }
+
+    public static int GetActiveQuestMask(Process game, IntPtr gameManagerMembers)
+    {
+        // gameManagerMembers points at current_day. active_quests is member 6.
+        return GetQuestDictionaryMask(game, gameManagerMembers, 6);
+    }
+
+    public static int GetCompletedQuestMask(Process game, IntPtr gameManagerMembers)
+    {
+        // completed_quests is the dictionary immediately after active_quests.
+        return GetQuestDictionaryMask(game, gameManagerMembers, 7);
     }
 
     public static IntPtr FindTimer(Process game)
@@ -348,6 +389,7 @@ public static class ErdetspillGodotReader
         vars.findTimer = null;
         vars.findGameManager = null;
         vars.getActiveQuestMask = null;
+        vars.getCompletedQuestMask = null;
     }
     else
     {
@@ -363,6 +405,10 @@ public static class ErdetspillGodotReader
             .GetType("ErdetspillGodotReader").GetMethod("GetActiveQuestMask");
         vars.getActiveQuestMask = (Func<System.Diagnostics.Process, IntPtr, int>)Delegate.CreateDelegate(
             typeof(Func<System.Diagnostics.Process, IntPtr, int>), activeQuestMethod);
+        var completedQuestMethod = compiled.CompiledAssembly
+            .GetType("ErdetspillGodotReader").GetMethod("GetCompletedQuestMask");
+        vars.getCompletedQuestMask = (Func<System.Diagnostics.Process, IntPtr, int>)Delegate.CreateDelegate(
+            typeof(Func<System.Diagnostics.Process, IntPtr, int>), completedQuestMethod);
     }
 }
 
@@ -374,6 +420,7 @@ init
     vars.scanCooldown = 0;
     vars.gameManagerScanCooldown = 0;
     vars.previousActiveQuestMask = -1;
+    vars.previousCompletedQuestMask = -1;
     vars.restartArmed = false;
     vars.questSplitQueue.Clear();
 
@@ -425,24 +472,48 @@ update
 
     vars.Uhara.Update();
 
-    if (vars.gameManagerMembers != IntPtr.Zero && vars.getActiveQuestMask != null)
-    {
-        int activeQuestMask = vars.getActiveQuestMask(game, vars.gameManagerMembers);
-        if (vars.previousActiveQuestMask >= 0)
-        {
-            int newlyUnlocked = activeQuestMask & ~vars.previousActiveQuestMask;
-            for (int bit = 0; bit < vars.questSettingKeys.Length; bit++)
-                if ((newlyUnlocked & (1 << bit)) != 0 && settings[vars.questSettingKeys[bit]])
-                    vars.questSplitQueue.Enqueue(bit);
-        }
-        vars.previousActiveQuestMask = activeQuestMask;
-    }
-
     vars.timerReady = vars.timerMembers != IntPtr.Zero &&
         !Double.IsNaN((double)current.igt) &&
         !Double.IsInfinity((double)current.igt) &&
         (double)current.igt >= 0.0 &&
         (double)current.igt < 864000.0;
+
+    bool resetFrame = vars.timerReady &&
+        (double)current.igt < 1.0 &&
+        (double)old.igt > (double)current.igt + 0.05;
+
+    if (vars.gameManagerMembers != IntPtr.Zero && vars.getActiveQuestMask != null)
+    {
+        int activeQuestMask = vars.getActiveQuestMask(game, vars.gameManagerMembers);
+        if (activeQuestMask >= 0)
+        {
+            if (vars.previousActiveQuestMask >= 0 && !resetFrame)
+            {
+                int newlyUnlocked = activeQuestMask & ~vars.previousActiveQuestMask;
+                for (int bit = 0; bit < vars.questSettingKeys.Length; bit++)
+                    if ((newlyUnlocked & (1 << bit)) != 0 && settings[vars.questSettingKeys[bit]])
+                        vars.questSplitQueue.Enqueue(bit);
+            }
+            vars.previousActiveQuestMask = activeQuestMask;
+        }
+    }
+
+    if (vars.gameManagerMembers != IntPtr.Zero && vars.getCompletedQuestMask != null)
+    {
+        int completedQuestMask = vars.getCompletedQuestMask(game, vars.gameManagerMembers);
+        if (completedQuestMask >= 0)
+        {
+            if (vars.previousCompletedQuestMask >= 0 && !resetFrame)
+            {
+                int newlyCompleted = completedQuestMask & ~vars.previousCompletedQuestMask;
+                for (int bit = 0; bit < vars.questCompletionSettingKeys.Length; bit++)
+                    if ((newlyCompleted & (1 << bit)) != 0 &&
+                        settings[vars.questCompletionSettingKeys[bit]])
+                        vars.questSplitQueue.Enqueue(bit);
+            }
+            vars.previousCompletedQuestMask = completedQuestMask;
+        }
+    }
 
     return true;
 }
@@ -459,6 +530,8 @@ start
         vars.questSplitQueue.Clear();
         if (vars.gameManagerMembers != IntPtr.Zero && vars.getActiveQuestMask != null)
             vars.previousActiveQuestMask = vars.getActiveQuestMask(game, vars.gameManagerMembers);
+        if (vars.gameManagerMembers != IntPtr.Zero && vars.getCompletedQuestMask != null)
+            vars.previousCompletedQuestMask = vars.getCompletedQuestMask(game, vars.gameManagerMembers);
     }
     return shouldStart;
 }
@@ -488,6 +561,7 @@ reset
         vars.restartArmed = true;
         vars.questSplitQueue.Clear();
         vars.previousActiveQuestMask = -1;
+        vars.previousCompletedQuestMask = -1;
     }
     return shouldReset;
 }
